@@ -15,7 +15,7 @@ export default async function handler(req, res) {
   try {
     if (process.env.OPENAI_API_KEY) {
       const completion = await openai.chat.completions.create({
-        model: 'gpt-4',
+        model: 'gpt-3.5-turbo',
         messages: [
           { role: 'system', content: 'Du är en erfaren investeringsrådgivare som svarar kortfattat och på svenska.' },
           { role: 'user', content: message }
