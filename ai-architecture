@@ -1,0 +1,138 @@
+# Projekt: AI Aktie Hjälp – Full Stack Arkitektur
+
+# -------------------------
+# 📁 data/fetch_data.py
+# -------------------------
+import yfinance as yf
+
+def fetch_ohlcv(ticker: str, period='1y', interval='1d'):
+    df = yf.Ticker(ticker).history(period=period, interval=interval)
+    return df[['Open', 'High', 'Low', 'Close', 'Volume']]
+
+def fetch_fundamentals(ticker: str):
+    info = yf.Ticker(ticker).info
+    return {
+        'pe': info.get('trailingPE'),
+        'ev_ebitda': info.get('enterpriseToEbitda'),
+        'margin': info.get('profitMargins'),
+    }
+
+# -------------------------
+# 📁 models/prediction.py
+# -------------------------
+import lightgbm as lgb
+
+def train_model(X, y):
+    model = lgb.LGBMRegressor()
+    model.fit(X, y)
+    return model
+
+def predict_signal(model, X_input):
+    score = model.predict(X_input)
+    return float(score)
+
+# -------------------------
+# 📁 models/llm_summary.py
+# -------------------------
+from openai import OpenAI
+import os
+
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+
+def summarize_news(text: str):
+    resp = client.chat.completions.create(
+        model='gpt-3.5-turbo',
+        messages=[
+            {'role': 'system', 'content': 'Sammanfatta nyheter professionellt.'},
+            {'role': 'user', 'content': text}
+        ],
+        max_tokens=200,
+        temperature=0.3
+    )
+    return resp.choices[0].message.content.strip()
+
+# -------------------------
+# 📁 rules/risk_rules.py
+# -------------------------
+def position_size(account_value, score, max_drawdown=0.1):
+    return account_value * 0.01 * min(score, 1.0)
+
+def apply_stop_loss(entry_price, stop_pct=0.05):
+    return entry_price * (1 - stop_pct)
+
+# -------------------------
+# 📁 backtest/backtest_engine.py
+# -------------------------
+import numpy as np
+
+def walk_forward_signals(signals, prices, costs=0.001):
+    pnl = []
+    for i in range(len(signals)-1):
+        entry = prices[i] * (1 + costs)
+        exit = prices[i+1] * (1 - costs)
+        pnl.append((exit / entry) - 1)
+    return np.array(pnl)
+
+def sharpe_ratio(returns, rf=0.0):
+    return np.mean(returns - rf) / np.std(returns) * np.sqrt(252)
+
+# -------------------------
+# 📁 api/serve.py (FastAPI)
+# -------------------------
+from fastapi import FastAPI
+from pydantic import BaseModel
+from models.prediction import predict_signal
+from rules.risk_rules import position_size, apply_stop_loss
+from data.fetch_data import fetch_ohlcv, fetch_fundamentals
+from models.llm_summary import summarize_news
+
+class Req(BaseModel):
+    symbol: str
+
+app = FastAPI()
+
+@app.post("/recommend")
+async def recommend(req: Req):
+    df = fetch_ohlcv(req.symbol, period='3mo', interval='1d')
+    fund = fetch_fundamentals(req.symbol)
+    X = ...  # skapa features från df + fund
+    score = predict_signal(model, X)
+    size = position_size(100_000, score)
+    news = "Senaste bolagsnyheterna ..."
+    summary = summarize_news(news)
+    return {
+        "symbol": req.symbol,
+        "score": score,
+        "position_size": size,
+        "stop_loss": apply_stop_loss(df['Close'].iloc[-1]),
+        "summary": summary
+    }
+
+# -------------------------
+# 📁 app/dashboard.py (Streamlit UI)
+# -------------------------
+import streamlit as st
+import requests
+
+st.title("AI Aktie Hjälp – dashboard")
+symbol = st.text_input("Aktie-symbol", "AAPL")
+if st.button("Hämta rekommendation"):
+    resp = requests.post("http://localhost:8000/recommend", json={"symbol": symbol})
+    data = resp.json()
+    st.write("Signal score:", data["score"])
+    st.write("Position size:", data["position_size"])
+    st.write("Stop‑loss:", data["stop_loss"])
+    st.write("Sammanfattning:", data["summary"])
+
+# -------------------------
+# requirements.txt
+# -------------------------
+openai
+lightgbm
+numpy
+pandas
+yfinance
+fastapi
+uvicorn
+streamlit
+scikit-learn
