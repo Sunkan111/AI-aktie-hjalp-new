@@ -1,90 +1,61 @@
-/**
- * API endpoint for obtaining a buy/sell/hold recommendation from OpenAI.
- *
- * Expects a POST request with a JSON body containing:
- *   - ticker: the stock symbol
- *   - data: an array of candlestick objects (timestamps and OHLC values)
- *
- * The function sends a prompt to the OpenAI API summarising recent price
- * movements and returns the assistant's recommendation. It uses the
- * OPENAI_API_KEY environment variable, falling back to a hard‑coded key if
- * needed. The response is returned as JSON.
- */
+import { OpenAI } from 'openai';
+
+// This serverless function calls OpenAI to generate a short
+// recommendation (buy, sell or hold) for the given ticker.  If the
+// OpenAI API is unavailable or returns an error, a simple heuristic
+// based on price momentum is used instead.  The request body should
+// include a `ticker` string and optionally an array of closing prices
+// named `closes`.
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
+
 export default async function handler(req, res) {
-  // Only allow POST requests
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
+  const { ticker, closes } = req.body || {};
+  if (!ticker) {
+    return res.status(400).json({ error: 'ticker missing' });
+  }
+
+  // Compose a prompt for the AI.  We instruct the model to make a
+  // recommendation using current trend, recent news and macroeconomic
+  // context.  The model should respond in Swedish with a short
+  // explanation and a suggested action: Köp, Sälj eller Avvakta.
+  const userPrompt = `Du är en professionell aktieanalytiker. Baserat på tillgänglig prisdata, nyheter och omvärldsanalys, ge en kort rekommendation (Köp, Sälj eller Avvakta) för aktien ${ticker}. Förklara trenden och ange ditt beslut.`;
 
   try {
-    const { ticker, data } = req.body;
-    if (!ticker || !data) {
-      return res.status(400).json({ error: 'Missing ticker or data' });
-    }
-
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
-    }
-
-    // Extract closing prices and build a summary for the prompt
-    const closes = data.map((c) => c.c).filter((v) => typeof v === 'number');
-    const recentCloses = closes.slice(-30);
-    const summary = recentCloses.join(', ');
-    // Build a prompt asking the model to consider price momentum, recent news and
-    // macro factors. While OpenAI's knowledge cutoff may limit news insight,
-    // the model can still generate a reasoned answer based on general patterns.
-    const prompt =
-      `Här är de senaste stängningspriserna för ${ticker}: ${summary}. ` +
-      `Analysera prisutvecklingen samt tänk på aktuella trender, nyhetsflöden och omvärldsanalys för bolaget och branschen. ` +
-      `Rekommenderar du att köpa, sälja eller avvakta? Motivera på svenska med ett par meningar.`;
-
-    let message;
-    try {
-      // Attempt to call OpenAI API
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-3.5-turbo',
-          messages: [
-            { role: 'system', content: 'Du är en tradingassistent som ger korta och tydliga rekommendationer baserat på prisdata.' },
-            { role: 'user', content: prompt },
-          ],
-          max_tokens: 150,
-          temperature: 0.7,
-        }),
+    if (process.env.OPENAI_API_KEY) {
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4',
+        messages: [
+          { role: 'system', content: 'Du är en erfaren aktieanalytiker som ger välgrundade investeringsrekommendationer.' },
+          { role: 'user', content: userPrompt }
+        ],
+        max_tokens: 120,
+        temperature: 0.6
       });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`OpenAI API error: ${response.status} - ${errText}`);
-      }
-      const json = await response.json();
-      message = json.choices?.[0]?.message?.content?.trim();
-    } catch (apiError) {
-      // If OpenAI fails (quota exceeded or model unavailable), compute a simple trend-based fallback
-      const first = recentCloses[0];
-      const last = recentCloses[recentCloses.length - 1];
-      if (typeof first === 'number' && typeof last === 'number') {
-        const diff = last - first;
-        if (diff > 0) {
-          message = 'Trenden är uppåtgående, vilket tyder på en köpsignal.';
-        } else if (diff < 0) {
-          message = 'Priset sjunker, så en säljsignal är rimlig just nu.';
-        } else {
-          message = 'Priset är oförändrat, det kan vara klokt att avvakta.';
-        }
-      } else {
-        message = 'Det gick inte att generera en rekommendation baserat på tillgänglig data.';
+      const message = response?.choices?.[0]?.message?.content?.trim();
+      if (message) {
+        return res.status(200).json({ message });
       }
     }
-
-    return res.status(200).json({ recommendation: message || 'Ingen rekommendation' });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
+  } catch (error) {
+    // fall through to heuristic
   }
+  // Fallback heuristic: use closing price momentum to derive a simple recommendation.
+  let recommendation = 'Det går inte att generera en rekommendation just nu.';
+  if (Array.isArray(closes) && closes.length > 1) {
+    const first = closes[0];
+    const last = closes[closes.length - 1];
+    const pctChange = ((last - first) / first) * 100;
+    if (pctChange > 2) {
+      recommendation = `Trenden är uppåtgående med en uppgång på ${pctChange.toFixed(2)} %. Detta tyder på en möjlig köpsignal.`;
+    } else if (pctChange < -2) {
+      recommendation = `Trenden är nedåtgående med en nedgång på ${pctChange.toFixed(2)} %. Detta tyder på en möjlig säljsignal.`;
+    } else {
+      recommendation = `Aktien rör sig sidledes. Det kan vara klokt att avvakta tills en tydligare trend uppstår.`;
+    }
+  }
+  return res.status(200).json({ message: recommendation });
 }

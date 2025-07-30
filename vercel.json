@@ -1,12 +1,11 @@
 {
+  // Vercel configuration routes API requests to the serverless
+  // functions under the api directory and serves the SPA from
+  // index.html for all other paths.  Without these rewrites Vercel
+  // would return 404s when users refresh pages or visit unknown
+  // routes.
   "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "/api/$1"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
+    { "source": "/api/(.*)", "destination": "/api/$1.js" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

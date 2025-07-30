@@ -1,351 +1,349 @@
-import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
-import { Chart as ChartJS, CategoryScale, LinearScale, TimeScale, Tooltip, Legend } from 'chart.js';
-import { CandlestickController, CandlestickElement } from 'chartjs-chart-financial';
-import 'chartjs-adapter-date-fns';
-import { Chart } from 'react-chartjs-2';
-import zoomPlugin from 'chartjs-plugin-zoom';
-
-// Register the necessary Chart.js components
-ChartJS.register(
-  CandlestickController,
-  CandlestickElement,
-  CategoryScale,
+import React, { useState, useEffect } from 'react';
+import {
+  Chart as ChartJS,
+  LineElement,
+  PointElement,
   LinearScale,
   TimeScale,
   Tooltip,
-  Legend
+  Legend,
+  Title
+} from 'chart.js';
+import { Line } from 'react-chartjs-2';
+import zoomPlugin from 'chartjs-plugin-zoom';
+import 'chartjs-adapter-date-fns';
+
+// Register Chart.js components and plugins.
+ChartJS.register(
+  LineElement,
+  PointElement,
+  LinearScale,
+  TimeScale,
+  Tooltip,
+  Legend,
+  Title,
+  zoomPlugin
 );
 
-// Register the zoom plugin to enable pan/zoom
-ChartJS.register(zoomPlugin);
+// Helper function to compute simple buy and sell signals based on
+// momentum between consecutive closing prices.  Returns two arrays
+// containing { x, y } objects for buy and sell points.
+function computeSignals(candles) {
+  const buys = [];
+  const sells = [];
+  for (let i = 1; i < candles.length; i++) {
+    const prev = candles[i - 1].c;
+    const cur = candles[i].c;
+    const change = (cur - prev) / prev;
+    // Mark buy when price jumps more than 0.5%
+    if (change > 0.005) {
+      buys.push({ x: candles[i].t, y: cur });
+    } else if (change < -0.005) {
+      sells.push({ x: candles[i].t, y: cur });
+    }
+  }
+  return { buys, sells };
+}
 
-function App() {
-  const [query, setQuery] = useState('');
+export default function App() {
+  const [search, setSearch] = useState('');
   const [suggestions, setSuggestions] = useState([]);
-  const [symbol, setSymbol] = useState(null);
+  const [selected, setSelected] = useState(null);
   const [candles, setCandles] = useState([]);
-  const [chartData, setChartData] = useState(null);
+  const [buySignals, setBuySignals] = useState([]);
+  const [sellSignals, setSellSignals] = useState([]);
   const [recommendation, setRecommendation] = useState('');
   const [loading, setLoading] = useState(false);
-  const intervalRef = useRef(null);
-
-  // Dropdown and extended UI state
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [activeMenu, setActiveMenu] = useState(null); // 'chat', 'pastTrades', 'currentTrades', 'topStocks'
-  const [chatMessages, setChatMessages] = useState([]);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [activePanel, setActivePanel] = useState('');
+  const [chatHistory, setChatHistory] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [pastTrades, setPastTrades] = useState([]);
   const [currentTrades, setCurrentTrades] = useState([]);
   const [topStocks, setTopStocks] = useState([]);
 
-  // Fetch search suggestions as the user types
+  // Fetch suggestions when the search query changes.
   useEffect(() => {
-    if (!query) {
-      setSuggestions([]);
-      return;
-    }
+    const controller = new AbortController();
     const fetchSuggestions = async () => {
-      try {
-        const res = await axios.get(`/api/search?q=${encodeURIComponent(query)}`);
-        setSuggestions(res.data.results);
-      } catch (err) {
-        console.error('Error fetching suggestions:', err.message);
+      if (search.trim().length < 2) {
+        setSuggestions([]);
+        return;
       }
-    };
-    // Debounce suggestions by 300ms
-    const timeoutId = setTimeout(fetchSuggestions, 300);
-    return () => clearTimeout(timeoutId);
-  }, [query]);
-
-  // Fetch candles and recommendation when a symbol is selected
-  useEffect(() => {
-    if (!symbol) return;
-    const fetchData = async () => {
-      setLoading(true);
       try {
-        const candleRes = await axios.get(`/api/candles?symbol=${encodeURIComponent(symbol)}`);
-        const { candles: rawCandles } = candleRes.data;
-        setCandles(rawCandles);
-        updateChart(rawCandles);
-        await fetchRecommendation(symbol, rawCandles);
-      } catch (err) {
-        console.error('Error fetching data:', err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-    // Set up periodic refresh every 60 seconds
-    clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(fetchData, 60000);
-    return () => clearInterval(intervalRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol]);
-
-  // Fetch top stocks when menu is opened
-  useEffect(() => {
-    const fetchTop = async () => {
-      try {
-        const res = await axios.get('/api/topstocks');
-        setTopStocks(res.data.top || []);
-      } catch (err) {
-        console.error('Error fetching top stocks:', err.message);
-      }
-    };
-    if (activeMenu === 'topStocks' && topStocks.length === 0) {
-      fetchTop();
-    }
-  }, [activeMenu]);
-
-  const updateChart = (candleData) => {
-    // Prepare candlestick dataset
-    const candlestick = candleData.map((c) => ({ x: c.t, o: c.o, h: c.h, l: c.l, c: c.c }));
-    // Compute simple buy/sell signals: flag large upward or downward moves relative to previous close
-    const buys = [];
-    const sells = [];
-    for (let i = 1; i < candleData.length; i++) {
-      const prev = candleData[i - 1];
-      const cur = candleData[i];
-      if (prev && typeof prev.c === 'number' && typeof cur.c === 'number') {
-        const change = (cur.c - prev.c) / prev.c;
-        if (change > 0.01) {
-          buys.push({ x: cur.t, y: cur.c });
-        } else if (change < -0.01) {
-          sells.push({ x: cur.t, y: cur.c });
+        const response = await fetch(`/api/search?q=${encodeURIComponent(search.trim())}`, { signal: controller.signal });
+        if (response.ok) {
+          const data = await response.json();
+          setSuggestions(data.suggestions || []);
         }
+      } catch (err) {
+        // ignore aborted requests
       }
-    }
-    setChartData({
-      datasets: [
-        {
-          label: symbol,
-          data: candlestick,
-          type: 'candlestick',
-          color: {
-            up: '#4caf50',
-            down: '#f44336',
-            unchanged: '#757575',
-          },
-        },
-        {
-          type: 'scatter',
-          label: 'Buy signals',
-          data: buys,
-          pointStyle: 'triangle',
-          pointBackgroundColor: '#00c853',
-          pointBorderColor: '#00c853',
-          pointRadius: 5,
-        },
-        {
-          type: 'scatter',
-          label: 'Sell signals',
-          data: sells,
-          pointStyle: 'rectRot',
-          pointBackgroundColor: '#d50000',
-          pointBorderColor: '#d50000',
-          pointRadius: 5,
-        },
-      ],
-    });
-  };
+    };
+    fetchSuggestions();
+    return () => controller.abort();
+  }, [search]);
 
-  const fetchRecommendation = async (ticker, candleData) => {
-    try {
-      const res = await axios.post('/api/recommendation', {
-        ticker,
-        data: candleData,
-      });
-      setRecommendation(res.data.recommendation);
-    } catch (err) {
-      console.error('Error fetching recommendation:', err.message);
-    }
-  };
-
-  const handleSuggestionClick = (item) => {
-    setSymbol(item.symbol);
-    setQuery(item.symbol);
+  // Load candlestick data and recommendation for the selected symbol.
+  const loadSymbol = async (symbol, name) => {
+    setSelected({ symbol, name });
+    setSearch(`${symbol} - ${name}`);
     setSuggestions([]);
+    setLoading(true);
+    setCandles([]);
+    setBuySignals([]);
+    setSellSignals([]);
+    setRecommendation('');
+    try {
+      // Fetch recent candlestick data (5 days, 15 minute intervals).
+      const resp = await fetch(`/api/candles?symbol=${encodeURIComponent(symbol)}&range=5d&interval=15m`);
+      const json = await resp.json();
+      const c = json.candles || [];
+      setCandles(c);
+      // Compute buy and sell signals from candles.
+      const { buys, sells } = computeSignals(c);
+      setBuySignals(buys);
+      setSellSignals(sells);
+      // Extract closing prices for recommendation.
+      const closes = c.map(item => item.c).filter(val => typeof val === 'number');
+      // Fetch AI recommendation.
+      const recResp = await fetch('/api/recommendation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker: symbol, closes })
+      });
+      const recJson = await recResp.json();
+      setRecommendation(recJson.message || recJson.reply || '');
+    } catch (error) {
+      setRecommendation('Kunde inte hämta data.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Send a chat message to the AI and update chat history.
+  const sendChat = async () => {
+    const content = chatInput.trim();
+    if (!content) return;
+    setChatHistory((hist) => [...hist, { role: 'user', content }]);
+    setChatInput('');
+    try {
+      const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: content })
+      });
+      const data = await resp.json();
+      setChatHistory((hist) => [...hist, { role: 'ai', content: data.reply || data.message || '' }]);
+    } catch (err) {
+      setChatHistory((hist) => [...hist, { role: 'ai', content: 'Jag kan tyvärr inte svara just nu.' }]);
+    }
+  };
+
+  // Fetch top stocks when needed.
+  const fetchTopStocks = async () => {
+    try {
+      const resp = await fetch('/api/topstocks');
+      const data = await resp.json();
+      setTopStocks(data.top || []);
+    } catch (err) {
+      setTopStocks([]);
+    }
+  };
+
+  // Chart.js data and options definition.
+  const chartData = {
+    datasets: [
+      {
+        label: selected ? `${selected.symbol} Pris` : 'Pris',
+        data: candles.map((c) => ({ x: c.t, y: c.c })),
+        borderColor: '#1976d2',
+        backgroundColor: 'rgba(25, 118, 210, 0.2)',
+        tension: 0.1,
+        pointRadius: 0,
+        borderWidth: 2,
+        yAxisID: 'y'
+      },
+      {
+        label: 'Köp',
+        data: buySignals,
+        type: 'scatter',
+        backgroundColor: '#2e7d32',
+        borderColor: '#2e7d32',
+        pointRadius: 5,
+        yAxisID: 'y'
+      },
+      {
+        label: 'Sälj',
+        data: sellSignals,
+        type: 'scatter',
+        backgroundColor: '#c62828',
+        borderColor: '#c62828',
+        pointRadius: 5,
+        yAxisID: 'y'
+      }
+    ]
   };
 
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: {
+      intersect: false,
+      mode: 'index'
+    },
     scales: {
       x: {
         type: 'time',
         time: {
-          unit: 'minute',
-          tooltipFormat: 'PPpp',
+          unit: 'day',
+          tooltipFormat: 'yyyy-MM-dd HH:mm'
         },
         ticks: {
-          source: 'auto',
-          maxRotation: 0,
-          autoSkip: true,
-        },
+          source: 'data'
+        }
       },
       y: {
         beginAtZero: false,
-        position: 'right',
         title: {
           display: true,
-          text: 'Pris (USD)',
-        },
-      },
+          text: 'Pris (USD)'
+        }
+      }
     },
     plugins: {
+      legend: {
+        display: false
+      },
+      title: {
+        display: false
+      },
+      tooltip: {
+        callbacks: {
+          label: function (ctx) {
+            if (ctx.dataset.type === 'scatter') {
+              const action = ctx.dataset.label;
+              const value = ctx.parsed.y.toFixed(2);
+              return `${action}: ${value}`;
+            }
+            return `Pris: ${ctx.parsed.y.toFixed(2)}`;
+          }
+        }
+      },
       zoom: {
-        pan: {
-          enabled: true,
-          mode: 'x',
-        },
         zoom: {
           wheel: {
-            enabled: true,
+            enabled: true
           },
           pinch: {
-            enabled: true,
+            enabled: true
           },
-          drag: {
-            enabled: true,
-          },
-          mode: 'x',
+          mode: 'x'
         },
-      },
-    },
-  };
-
-  // Toggle dropdown visibility
-  const toggleDropdown = () => {
-    setShowDropdown(!showDropdown);
-  };
-
-  // Handle menu selection
-  const handleMenu = (menu) => {
-    setActiveMenu((prev) => (prev === menu ? null : menu));
-    setShowDropdown(false);
-  };
-
-  // Send a chat message to the backend
-  const sendChat = async () => {
-    const msg = chatInput.trim();
-    if (!msg) return;
-    const userMsg = { sender: 'user', text: msg };
-    setChatMessages((msgs) => [...msgs, userMsg]);
-    setChatInput('');
-    try {
-      const res = await axios.post('/api/chat', { message: msg });
-      const reply = res.data.reply;
-      setChatMessages((msgs) => [...msgs, { sender: 'assistant', text: reply }]);
-    } catch (err) {
-      setChatMessages((msgs) => [...msgs, { sender: 'assistant', text: 'Kunde inte svara. Försök igen senare.' }]);
+        pan: {
+          enabled: true,
+          mode: 'x'
+        }
+      }
     }
   };
 
-  // Render components for each dropdown menu
-  const renderActiveMenu = () => {
-    switch (activeMenu) {
-      case 'chat':
-        return (
-          <div className="panel chat-panel">
-            <div className="chat-log">
-              {chatMessages.map((m, idx) => (
-                <div key={idx} className={`chat-message ${m.sender}`}>{m.text}</div>
+  // Panel rendering helper: returns a panel component based on active panel.
+  const renderPanel = () => {
+    if (activePanel === 'chat') {
+      return (
+        <div className="panel">
+          <h2>Chat med AI</h2>
+          <div className="chat-history">
+            {chatHistory.map((msg, idx) => (
+              <div key={idx} className={`chat-message ${msg.role === 'ai' ? 'ai' : ''}`}>{msg.content}</div>
+            ))}
+          </div>
+          <div className="chat-input-container">
+            <input
+              className="chat-input"
+              type="text"
+              placeholder="Skriv meddelande..."
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  sendChat();
+                }
+              }}
+            />
+            <button className="chat-send-button" onClick={sendChat}>Skicka</button>
+          </div>
+        </div>
+      );
+    } else if (activePanel === 'past') {
+      return (
+        <div className="panel">
+          <h2>Tidigare trades</h2>
+          {pastTrades.length === 0 ? (
+            <p>Inga genomförda trades ännu.</p>
+          ) : (
+            <ul>
+              {pastTrades.map((trade, idx) => (
+                <li key={idx}>{`${trade.date}: ${trade.type} ${trade.symbol} @ ${trade.price.toFixed(2)}`}</li>
               ))}
-            </div>
-            <div className="chat-input">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Skriv ditt meddelande..."
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') sendChat();
-                }}
-              />
-              <button onClick={sendChat}>Skicka</button>
-            </div>
-          </div>
-        );
-      case 'pastTrades':
-        return (
-          <div className="panel trades-panel">
-            <h3>Tidigare trades</h3>
-            {pastTrades.length === 0 ? (
-              <p>Inga genomförda trades ännu.</p>
-            ) : (
-              <ul>
-                {pastTrades.map((t, idx) => (
-                  <li key={idx}>{`${t.symbol} – ${t.action} @ ${t.price.toFixed(2)} USD`}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        );
-      case 'currentTrades':
-        return (
-          <div className="panel trades-panel">
-            <h3>Aktuella trades</h3>
-            {currentTrades.length === 0 ? (
-              <p>Inga öppna positioner.</p>
-            ) : (
-              <ul>
-                {currentTrades.map((t, idx) => (
-                  <li key={idx}>{`${t.symbol} – ${t.quantity} st @ ${t.entry.toFixed(2)} USD`}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        );
-      case 'topStocks':
-        return (
-          <div className="panel top-panel">
-            <h3>Dagens topval</h3>
-            {topStocks.length === 0 ? (
-              <p>Hämtar topplistan...</p>
-            ) : (
-              <ol>
-                {topStocks.map((s, idx) => (
-                  <li key={idx}>{`${s.symbol} (${s.change.toFixed(2)} %)`}</li>
-                ))}
-              </ol>
-            )}
-          </div>
-        );
-      default:
-        return null;
+            </ul>
+          )}
+        </div>
+      );
+    } else if (activePanel === 'current') {
+      return (
+        <div className="panel">
+          <h2>Aktuella trades</h2>
+          {currentTrades.length === 0 ? (
+            <p>Inga öppna trades.</p>
+          ) : (
+            <ul>
+              {currentTrades.map((trade, idx) => (
+                <li key={idx}>{`${trade.symbol}: ${trade.type} @ ${trade.price.toFixed(2)}`}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      );
+    } else if (activePanel === 'top') {
+      return (
+        <div className="panel">
+          <h2>Dagens topval</h2>
+          {topStocks.length === 0 ? (
+            <p>Laddar...</p>
+          ) : (
+            <ol>
+              {topStocks.map((item, idx) => (
+                <li key={idx}>{`${item.symbol} (${item.pctChange.toFixed(2)}%)`}</li>
+              ))}
+            </ol>
+          )}
+        </div>
+      );
     }
+    return null;
   };
 
   return (
-    <div className="app-container">
-      <header>
-        <h1>AI Aktie Hjälp</h1>
-        <p>Sök efter en aktie och få realtidsdata med AI‑drivna rekommendationer.</p>
-        <button className="menu-button" onClick={toggleDropdown}>☰ Meny</button>
-        {showDropdown && (
-          <div className="dropdown-menu">
-            <div onClick={() => handleMenu('chat')}>Chat med AI</div>
-            <div onClick={() => handleMenu('pastTrades')}>Tidigare trades</div>
-            <div onClick={() => handleMenu('currentTrades')}>Aktuella trades</div>
-            <div onClick={() => handleMenu('topStocks')}>Dagens topval</div>
-          </div>
-        )}
-      </header>
-      <div className="search-bar">
+    <div style={{ position: 'relative' }}>
+      <h1>AI Aktie Hjälp</h1>
+      <p style={{ textAlign: 'center', marginBottom: '1rem' }}>Sök efter en aktie och få realtidsdata med AI‑drivna rekommendationer.</p>
+      <div className="search-container">
         <input
+          className="search-input"
           type="text"
           placeholder="Sök efter aktie..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
         />
         {suggestions.length > 0 && (
-          <div className="suggestions">
-            {suggestions.map((item) => (
+          <div className="suggestions-list">
+            {suggestions.map((item, idx) => (
               <div
-                key={item.symbol}
+                key={idx}
                 className="suggestion-item"
-                onClick={() => handleSuggestionClick(item)}
+                onClick={() => loadSymbol(item.symbol, item.name)}
               >
                 {item.symbol} – {item.name}
               </div>
@@ -353,23 +351,41 @@ function App() {
           </div>
         )}
       </div>
-      <div className="chart-container">
-        {chartData ? (
-          <Chart type='candlestick' data={chartData} options={chartOptions} />
+      {/* Menu Button */}
+      <button className="menu-button" onClick={() => setMenuOpen(!menuOpen)}>Meny</button>
+      {menuOpen && (
+        <div className="dropdown">
+          <div className="dropdown-item" onClick={() => { setActivePanel('chat'); setMenuOpen(false); }}>
+            Chat med AI
+          </div>
+          <div className="dropdown-item" onClick={() => { setActivePanel('past'); setMenuOpen(false); }}>
+            Tidigare trades
+          </div>
+          <div className="dropdown-item" onClick={() => { setActivePanel('current'); setMenuOpen(false); }}>
+            Aktuella trades
+          </div>
+          <div className="dropdown-item" onClick={() => { setActivePanel('top'); setMenuOpen(false); fetchTopStocks(); }}>
+            Dagens topval
+          </div>
+        </div>
+      )}
+      {/* Chart Section */}
+      <div style={{ height: '400px', marginTop: '1rem', background: '#fff', border: '1px solid #ddd', borderRadius: '4px', padding: '1rem' }}>
+        {loading ? (
+          <div className="loading">Laddar data...</div>
+        ) : candles.length > 0 ? (
+          <>
+            <Line data={chartData} options={chartOptions} />
+            {recommendation && (
+              <p style={{ marginTop: '1rem', fontStyle: 'italic' }}>{recommendation}</p>
+            )}
+          </>
         ) : (
           <p>Välj en aktie för att se grafen.</p>
         )}
       </div>
-      {loading && <div className="loading">Laddar data...</div>}
-      {recommendation && (
-        <div className="recommendation">
-          <strong>AI‑förslag:</strong> {recommendation}
-        </div>
-      )}
-      {/* Render extended menus */}
-      {renderActiveMenu()}
+      {/* Render panel if any is active */}
+      {activePanel && renderPanel()}
     </div>
   );
 }
-
-export default App;
