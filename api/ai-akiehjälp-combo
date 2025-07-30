@@ -1,0 +1,84 @@
+// === 📁 /api/fetch-data.js ===
+// Hämtar OHLCV från yFinance (via RapidAPI)
+export default async function handler(req, res) {
+  const symbol = req.query.symbol || 'AAPL';
+  const response = await fetch(`https://yfapi.net/v8/finance/chart/${symbol}?range=5d&interval=15m`, {
+    headers: { 'x-api-key': process.env.YF_API_KEY }
+  });
+  const data = await response.json();
+  res.status(200).json({ candles: data.chart.result[0].indicators.quote[0] });
+}
+
+// === 📁 /api/indicators.js ===
+// Hämtar tekniska indikatorer via Alpha Vantage
+export default async function handler(req, res) {
+  const { symbol } = req.query;
+  const response = await fetch(`https://www.alphavantage.co/query?function=RSI&symbol=${symbol}&interval=15min&apikey=${process.env.ALPHA_VANTAGE_KEY}`);
+  const data = await response.json();
+  res.status(200).json(data);
+}
+
+// === 📁 /api/sentiment.js ===
+// Klassificerar nyhetssentiment med HuggingFace (FinBERT)
+export default async function handler(req, res) {
+  const { text } = req.body;
+  const hfResp = await fetch("https://api-inference.huggingface.co/models/ProsusAI/finbert", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${process.env.HUGGINGFACE_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ inputs: text })
+  });
+  const result = await hfResp.json();
+  res.status(200).json(result);
+}
+
+// === 📁 /api/predict.js ===
+// Enkelt mock-prediktionssvar (ersätt med riktig modell via API om du vill)
+export default async function handler(req, res) {
+  const { rsi, trend } = req.body;
+  let signal = 'Avvakta';
+  if (rsi < 30 && trend === 'positiv') signal = 'Köp';
+  if (rsi > 70 && trend === 'negativ') signal = 'Sälj';
+  res.status(200).json({ signal });
+}
+
+// === 📁 /api/recommendation.js ===
+// LLM-genererad motivering (ex: OpenRouter, HuggingFace eller GPT)
+export default async function handler(req, res) {
+  const { ticker, signal } = req.body;
+  const prompt = `Aktie: ${ticker}. Rekommendation: ${signal}. Ge en kort förklaring på svenska varför.`;
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${process.env.OPENROUTER_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "openai/gpt-3.5-turbo",
+      messages: [
+        { role: "user", content: prompt }
+      ]
+    })
+  });
+  const data = await response.json();
+  res.status(200).json({ explanation: data.choices?.[0]?.message?.content });
+}
+
+// === 📁 /components/SignalBox.jsx ===
+export default function SignalBox({ signal, explanation }) {
+  return (
+    <div className="signal-box">
+      <h3>AI-signal: {signal}</h3>
+      <p>{explanation}</p>
+    </div>
+  );
+}
+// === vercel.json ===
+{
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1.js" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
