@@ -14,7 +14,6 @@ import { Line } from 'react-chartjs-2';
 import zoomPlugin from 'chartjs-plugin-zoom';
 import 'chartjs-adapter-date-fns';
 
-// Register Chart.js components and plugins.
 ChartJS.register(
   LineElement,
   PointElement,
@@ -27,9 +26,6 @@ ChartJS.register(
   ScatterController,
 );
 
-// Helper function to compute simple buy and sell signals based on
-// momentum between consecutive closing prices.  Returns two arrays
-// containing { x, y } objects for buy and sell points.
 function computeSignals(candles) {
   const buys = [];
   const sells = [];
@@ -37,7 +33,6 @@ function computeSignals(candles) {
     const prev = candles[i - 1].c;
     const cur = candles[i].c;
     const change = (cur - prev) / prev;
-    // Mark buy when price jumps more than 0.5%
     if (change > 0.005) {
       buys.push({ x: candles[i].t, y: cur });
     } else if (change < -0.005) {
@@ -63,8 +58,8 @@ export default function App() {
   const [pastTrades, setPastTrades] = useState([]);
   const [currentTrades, setCurrentTrades] = useState([]);
   const [topStocks, setTopStocks] = useState([]);
+  const [news, setNews] = useState([]);
 
-  // Fetch suggestions when the search query changes.
   useEffect(() => {
     const controller = new AbortController();
     const fetchSuggestions = async () => {
@@ -78,15 +73,26 @@ export default function App() {
           const data = await response.json();
           setSuggestions(data.suggestions || []);
         }
-      } catch (err) {
-        // ignore aborted requests
-      }
+      } catch (err) {}
     };
     fetchSuggestions();
     return () => controller.abort();
   }, [search]);
 
-  // Load candlestick data and recommendation for the selected symbol.
+  const fetchNews = async (symbol) => {
+    try {
+      const resp = await fetch('/api/serper', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: `${symbol} aktienyheter` })
+      });
+      const data = await resp.json();
+      setNews(data.news || []);
+    } catch (err) {
+      console.error('Kunde inte hämta nyheter:', err);
+    }
+  };
+
   const loadSymbol = async (symbol, name) => {
     setSelected({ symbol, name });
     setSearch(`${symbol} - ${name}`);
@@ -97,18 +103,14 @@ export default function App() {
     setSellSignals([]);
     setRecommendation('');
     try {
-      // Fetch recent candlestick data (5 days, 15 minute intervals).
       const resp = await fetch(`/api/candles?symbol=${encodeURIComponent(symbol)}&range=5d&interval=15m`);
       const json = await resp.json();
       const c = json.candles || [];
       setCandles(c);
-      // Compute buy and sell signals from candles.
       const { buys, sells } = computeSignals(c);
       setBuySignals(buys);
       setSellSignals(sells);
-      // Extract closing prices for recommendation.
       const closes = c.map(item => item.c).filter(val => typeof val === 'number');
-      // Fetch AI recommendation.
       const recResp = await fetch('/api/recommendation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -116,6 +118,7 @@ export default function App() {
       });
       const recJson = await recResp.json();
       setRecommendation(recJson.message || recJson.reply || '');
+      await fetchNews(symbol);
     } catch (error) {
       setRecommendation('Kunde inte hämta data.');
     } finally {
@@ -123,7 +126,6 @@ export default function App() {
     }
   };
 
-  // Send a chat message to the AI and update chat history.
   const sendChat = async () => {
     const content = chatInput.trim();
     if (!content) return;
@@ -142,7 +144,6 @@ export default function App() {
     }
   };
 
-  // Fetch top stocks when needed.
   const fetchTopStocks = async () => {
     try {
       const resp = await fetch('/api/topstocks');
@@ -153,7 +154,6 @@ export default function App() {
     }
   };
 
-  // Chart.js data and options definition.
   const chartData = {
     datasets: [
       {
@@ -214,12 +214,8 @@ export default function App() {
       }
     },
     plugins: {
-      legend: {
-        display: false
-      },
-      title: {
-        display: false
-      },
+      legend: { display: false },
+      title: { display: false },
       tooltip: {
         callbacks: {
           label: function (ctx) {
@@ -234,23 +230,15 @@ export default function App() {
       },
       zoom: {
         zoom: {
-          wheel: {
-            enabled: true
-          },
-          pinch: {
-            enabled: true
-          },
+          wheel: { enabled: true },
+          pinch: { enabled: true },
           mode: 'x'
         },
-        pan: {
-          enabled: true,
-          mode: 'x'
-        }
+        pan: { enabled: true, mode: 'x' }
       }
     }
   };
 
-  // Panel rendering helper: returns a panel component based on active panel.
   const renderPanel = () => {
     if (activePanel === 'chat') {
       return (
@@ -282,9 +270,7 @@ export default function App() {
       return (
         <div className="panel">
           <h2>Tidigare trades</h2>
-          {pastTrades.length === 0 ? (
-            <p>Inga genomförda trades ännu.</p>
-          ) : (
+          {pastTrades.length === 0 ? <p>Inga genomförda trades ännu.</p> : (
             <ul>
               {pastTrades.map((trade, idx) => (
                 <li key={idx}>{`${trade.date}: ${trade.type} ${trade.symbol} @ ${trade.price.toFixed(2)}`}</li>
@@ -297,9 +283,7 @@ export default function App() {
       return (
         <div className="panel">
           <h2>Aktuella trades</h2>
-          {currentTrades.length === 0 ? (
-            <p>Inga öppna trades.</p>
-          ) : (
+          {currentTrades.length === 0 ? <p>Inga öppna trades.</p> : (
             <ul>
               {currentTrades.map((trade, idx) => (
                 <li key={idx}>{`${trade.symbol}: ${trade.type} @ ${trade.price.toFixed(2)}`}</li>
@@ -312,9 +296,7 @@ export default function App() {
       return (
         <div className="panel">
           <h2>Dagens topval</h2>
-          {topStocks.length === 0 ? (
-            <p>Laddar...</p>
-          ) : (
+          {topStocks.length === 0 ? <p>Laddar...</p> : (
             <ol>
               {topStocks.map((item, idx) => (
                 <li key={idx}>{`${item.symbol} (${item.pctChange.toFixed(2)}%)`}</li>
@@ -353,40 +335,40 @@ export default function App() {
           </div>
         )}
       </div>
-      {/* Menu Button */}
       <button className="menu-button" onClick={() => setMenuOpen(!menuOpen)}>Meny</button>
       {menuOpen && (
         <div className="dropdown">
-          <div className="dropdown-item" onClick={() => { setActivePanel('chat'); setMenuOpen(false); }}>
-            Chat med AI
-          </div>
-          <div className="dropdown-item" onClick={() => { setActivePanel('past'); setMenuOpen(false); }}>
-            Tidigare trades
-          </div>
-          <div className="dropdown-item" onClick={() => { setActivePanel('current'); setMenuOpen(false); }}>
-            Aktuella trades
-          </div>
-          <div className="dropdown-item" onClick={() => { setActivePanel('top'); setMenuOpen(false); fetchTopStocks(); }}>
-            Dagens topval
-          </div>
+          <div className="dropdown-item" onClick={() => { setActivePanel('chat'); setMenuOpen(false); }}>Chat med AI</div>
+          <div className="dropdown-item" onClick={() => { setActivePanel('past'); setMenuOpen(false); }}>Tidigare trades</div>
+          <div className="dropdown-item" onClick={() => { setActivePanel('current'); setMenuOpen(false); }}>Aktuella trades</div>
+          <div className="dropdown-item" onClick={() => { setActivePanel('top'); setMenuOpen(false); fetchTopStocks(); }}>Dagens topval</div>
         </div>
       )}
-      {/* Chart Section */}
       <div style={{ height: '400px', marginTop: '1rem', background: '#fff', border: '1px solid #ddd', borderRadius: '4px', padding: '1rem' }}>
         {loading ? (
           <div className="loading">Laddar data...</div>
         ) : candles.length > 0 ? (
           <>
             <Line data={chartData} options={chartOptions} />
-            {recommendation && (
-              <p style={{ marginTop: '1rem', fontStyle: 'italic' }}>{recommendation}</p>
-            )}
+            {recommendation && <p style={{ marginTop: '1rem', fontStyle: 'italic' }}>{recommendation}</p>}
           </>
         ) : (
           <p>Välj en aktie för att se grafen.</p>
         )}
       </div>
-      {/* Render panel if any is active */}
+      {news.length > 0 && (
+        <div style={{ marginTop: '2rem' }}>
+          <h3>Senaste nyheter:</h3>
+          <ul>
+            {news.map((n, idx) => (
+              <li key={idx}>
+                <a href={n.link} target="_blank" rel="noopener noreferrer">{n.title}</a>
+                <p>{n.snippet}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {activePanel && renderPanel()}
     </div>
   );
