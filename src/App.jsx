@@ -7,8 +7,8 @@ import {
   TimeScale,
   Tooltip,
   Legend,
-  Title
-  ScatterController
+  Title,
+  ScatterController,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import zoomPlugin from 'chartjs-plugin-zoom';
@@ -23,8 +23,8 @@ ChartJS.register(
   Tooltip,
   Legend,
   Title,
-  zoomPlugin
-  ScatterController
+  zoomPlugin,
+  ScatterController,
 );
 
 // Helper function to compute simple buy and sell signals based on
