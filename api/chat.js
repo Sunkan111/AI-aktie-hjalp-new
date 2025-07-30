@@ -37,3 +37,6 @@ export default async function handler(req, res) {
   }
   return res.status(200).json({ reply: 'Jag kan tyvärr inte svara just nu. Försök igen senare.' });
 }
+} catch (error) {
+  console.error("OpenAI API error:", error);
+}
