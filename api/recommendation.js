@@ -31,9 +31,13 @@ export default async function handler(req, res) {
     const closes = data.map((c) => c.c).filter((v) => typeof v === 'number');
     const recentCloses = closes.slice(-30);
     const summary = recentCloses.join(', ');
-    const prompt = `Här är de senaste stängningspriserna för ${ticker}: ${summary}. ` +
-      `Baserat på denna trend, rekommenderar du att köpa, sälja eller avvakta? ` +
-      `Svar på svenska och motivera kort varför.`;
+    // Build a prompt asking the model to consider price momentum, recent news and
+    // macro factors. While OpenAI's knowledge cutoff may limit news insight,
+    // the model can still generate a reasoned answer based on general patterns.
+    const prompt =
+      `Här är de senaste stängningspriserna för ${ticker}: ${summary}. ` +
+      `Analysera prisutvecklingen samt tänk på aktuella trender, nyhetsflöden och omvärldsanalys för bolaget och branschen. ` +
+      `Rekommenderar du att köpa, sälja eller avvakta? Motivera på svenska med ett par meningar.`;
 
     let message;
     try {
