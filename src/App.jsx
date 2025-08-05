@@ -51,6 +51,7 @@ export default function App() {
   const [sellSignals, setSellSignals] = useState([]);
   const [recommendation, setRecommendation] = useState('');
   const [loading, setLoading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activePanel, setActivePanel] = useState('');
   const [chatHistory, setChatHistory] = useState([]);
@@ -98,31 +99,40 @@ export default function App() {
     setSearch(`${symbol} - ${name}`);
     setSuggestions([]);
     setLoading(true);
+    setAnalyzing(true);
     setCandles([]);
     setBuySignals([]);
     setSellSignals([]);
     setRecommendation('');
     try {
+      // 1. Prisdata
       const resp = await fetch(`/api/candles?symbol=${encodeURIComponent(symbol)}&range=5d&interval=15m`);
       const json = await resp.json();
       const c = json.candles || [];
       setCandles(c);
+
+      // 2. Köp/Sälj‑signaler
       const { buys, sells } = computeSignals(c);
       setBuySignals(buys);
       setSellSignals(sells);
-      const closes = c.map(item => item.c).filter(val => typeof val === 'number');
-      const recResp = await fetch('/api/recommendation', {
+
+      // 3. Nyheter via Serper
+      await fetchNews(symbol);
+
+      // 4. Slutanalys via Gemini
+      const geminiResp = await fetch('/api/gemini-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: symbol, closes })
+        body: JSON.stringify({ symbol })
       });
-      const recJson = await recResp.json();
-      setRecommendation(recJson.message || recJson.reply || '');
-      await fetchNews(symbol);
+      const geminiJson = await geminiResp.json();
+      setRecommendation(geminiJson.analysis || 'Ingen analys tillgänglig just nu.');
     } catch (error) {
+      console.error('Fel vid laddning av symbol:', error);
       setRecommendation('Kunde inte hämta data.');
     } finally {
       setLoading(false);
+      setAnalyzing(false);
     }
   };
 
@@ -190,27 +200,16 @@ export default function App() {
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    interaction: {
-      intersect: false,
-      mode: 'index'
-    },
+    interaction: { intersect: false, mode: 'index' },
     scales: {
       x: {
         type: 'time',
-        time: {
-          unit: 'day',
-          tooltipFormat: 'yyyy-MM-dd HH:mm'
-        },
-        ticks: {
-          source: 'data'
-        }
+        time: { unit: 'day', tooltipFormat: 'yyyy-MM-dd HH:mm' },
+        ticks: { source: 'data' }
       },
       y: {
         beginAtZero: false,
-        title: {
-          display: true,
-          text: 'Pris (USD)'
-        }
+        title: { display: true, text: 'Pris (USD)' }
       }
     },
     plugins: {
@@ -229,11 +228,7 @@ export default function App() {
         }
       },
       zoom: {
-        zoom: {
-          wheel: { enabled: true },
-          pinch: { enabled: true },
-          mode: 'x'
-        },
+        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
         pan: { enabled: true, mode: 'x' }
       }
     }
@@ -271,11 +266,7 @@ export default function App() {
         <div className="panel">
           <h2>Tidigare trades</h2>
           {pastTrades.length === 0 ? <p>Inga genomförda trades ännu.</p> : (
-            <ul>
-              {pastTrades.map((trade, idx) => (
-                <li key={idx}>{`${trade.date}: ${trade.type} ${trade.symbol} @ ${trade.price.toFixed(2)}`}</li>
-              ))}
-            </ul>
+            <ul>{pastTrades.map((trade, idx) => <li key={idx}>{`${trade.date}: ${trade.type} ${trade.symbol} @ ${trade.price.toFixed(2)}`}</li>)}</ul>
           )}
         </div>
       );
@@ -284,11 +275,7 @@ export default function App() {
         <div className="panel">
           <h2>Aktuella trades</h2>
           {currentTrades.length === 0 ? <p>Inga öppna trades.</p> : (
-            <ul>
-              {currentTrades.map((trade, idx) => (
-                <li key={idx}>{`${trade.symbol}: ${trade.type} @ ${trade.price.toFixed(2)}`}</li>
-              ))}
-            </ul>
+            <ul>{currentTrades.map((trade, idx) => <li key={idx}>{`${trade.symbol}: ${trade.type} @ ${trade.price.toFixed(2)}`}</li>)}</ul>
           )}
         </div>
       );
@@ -297,11 +284,7 @@ export default function App() {
         <div className="panel">
           <h2>Dagens topval</h2>
           {topStocks.length === 0 ? <p>Laddar...</p> : (
-            <ol>
-              {topStocks.map((item, idx) => (
-                <li key={idx}>{`${item.symbol} (${item.pctChange.toFixed(2)}%)`}</li>
-              ))}
-            </ol>
+            <ol>{topStocks.map((item, idx) => <li key={idx}>{`${item.symbol} (${item.pctChange.toFixed(2)}%)`}</li>)}</ol>
           )}
         </div>
       );
@@ -350,6 +333,7 @@ export default function App() {
         ) : candles.length > 0 ? (
           <>
             <Line data={chartData} options={chartOptions} />
+            {analyzing && <p style={{ marginTop: '0.5rem', fontStyle: 'italic', color: '#555' }}>AI analyserar data...</p>}
             {recommendation && <p style={{ marginTop: '1rem', fontStyle: 'italic' }}>{recommendation}</p>}
           </>
         ) : (
