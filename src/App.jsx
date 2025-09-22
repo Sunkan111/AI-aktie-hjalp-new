@@ -61,6 +61,9 @@ export default function App() {
   const [topStocks, setTopStocks] = useState([]);
   const [news, setNews] = useState([]);
 
+    const [marketSuggestions, setMarketSuggestions] = useState([]);
+  const [updatingMarket, setUpdatingMarket] = useState(false);
+  const [sellMessages, setSellMessages] = useState({});
   useEffect(() => {
     const controller = new AbortController();
     const fetchSuggestions = async () => {
@@ -160,7 +163,58 @@ export default function App() {
       const data = await resp.json();
       setTopStocks(data.top || []);
     } catch (err) {
-      setTopStocks([]);
+  
+      
+        // Market update: fetch suggestions and analyze with Gemini
+  const handleUpdate = async () => {
+    setUpdatingMarket(true);
+    try {
+      const resp = await fetch('/api/topstocks');
+      const data = await resp.json();
+      const trending = data.top || [];
+      const suggestions = [];
+      for (const item of trending) {
+        try {
+          const recResp = await fetch('/api/gemini-analysis', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbol: item.symbol })
+          });
+          const recData = await recResp.json();
+          const analysis = recData.analysis || recData.message || '';
+          if (/köp/i.test(analysis) || /buy/i.test(analysis)) {
+            suggestions.push({ symbol: item.symbol, analysis });
+          }
+          if (suggestions.length >= 5) break;
+        } catch (err) {
+          // ignore errors for individual stocks
+        }
+      }
+      setMarketSuggestions(suggestions);
+    } catch (err) {
+      setMarketSuggestions([]);
+    } finally {
+      setUpdatingMarket(false);
+    }
+  };
+
+  // Buy a stock and generate sell analysis
+  const buyStock = async (symbol) => {
+    setCurrentTrades((trades) => [...trades, { symbol }]);
+    try {
+      const res = await fetch('/api/gemini-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol })
+      });
+      const data = await res.json();
+      const analysis = data.analysis || data.message || '';
+      setSellMessages((prev) => ({ ...prev, [symbol]: analysis }));
+    } catch (err) {
+      setSellMessages((prev) => ({ ...prev, [symbol]: 'Ingen säljanalys tillgänglig.' }));
+    }
+  };
+
     }
   };
 
@@ -339,7 +393,30 @@ export default function App() {
         ) : (
           <p>Välj en aktie för att se grafen.</p>
         )}
-      </div>
+  
+            <div style={{ marginTop: '1rem', padding: '1rem', background: '#fff', border: '1px solid #ddd', borderRadius: '4px' }}>
+        <h3>Marknadsanalys</h3>
+        <button onClick={handleUpdate} disabled={updatingMarket}>
+          {updatingMarket ? 'Analyserar...' : 'Uppdatera'}
+        </button>
+        {marketSuggestions.length > 0 ? (
+          <ul style={{ marginTop: '1rem' }}>
+            {marketSuggestions.map((item, idx) => (
+              <li key={idx} style={{ marginBottom: '0.5rem' }}>
+                <strong>{item.symbol}</strong>: {item.analysis}{' '}
+                <button onClick={() => buyStock(item.symbol)}>Köp</button>
+                {sellMessages[item.symbol] && (
+                  <div style={{ marginTop: '0.25rem', fontStyle: 'italic', color: '#555' }}>
+                    {sellMessages[item.symbol]}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p style={{ marginTop: '0.5rem' }}>Inga rekommendationer ännu.</p>
+        )}
+      </div></div>
       {news.length > 0 && (
         <div style={{ marginTop: '2rem' }}>
           <h3>Senaste nyheter:</h3>
