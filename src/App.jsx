@@ -61,9 +61,11 @@ export default function App() {
   const [topStocks, setTopStocks] = useState([]);
   const [news, setNews] = useState([]);
 
-    const [marketSuggestions, setMarketSuggestions] = useState([]);
+  // Dessa tre states lades till för marknadsanalys- och säljsignal‑funktionaliteten
+  const [marketSuggestions, setMarketSuggestions] = useState([]);
   const [updatingMarket, setUpdatingMarket] = useState(false);
   const [sellMessages, setSellMessages] = useState({});
+
   useEffect(() => {
     const controller = new AbortController();
     const fetchSuggestions = async () => {
@@ -72,12 +74,17 @@ export default function App() {
         return;
       }
       try {
-        const response = await fetch(`/api/search?q=${encodeURIComponent(search.trim())}`, { signal: controller.signal });
+        const response = await fetch(
+          `/api/search?q=${encodeURIComponent(search.trim())}`,
+          { signal: controller.signal },
+        );
         if (response.ok) {
           const data = await response.json();
           setSuggestions(data.suggestions || []);
         }
-      } catch (err) {}
+      } catch (err) {
+        // ignorera fel
+      }
     };
     fetchSuggestions();
     return () => controller.abort();
@@ -88,7 +95,7 @@ export default function App() {
       const resp = await fetch('/api/serper', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: `${symbol} aktienyheter` })
+        body: JSON.stringify({ query: `${symbol} aktienyheter` }),
       });
       const data = await resp.json();
       setNews(data.news || []);
@@ -109,7 +116,9 @@ export default function App() {
     setRecommendation('');
     try {
       // 1. Prisdata
-      const resp = await fetch(`/api/candles?symbol=${encodeURIComponent(symbol)}&range=5d&interval=15m`);
+      const resp = await fetch(
+        `/api/candles?symbol=${encodeURIComponent(symbol)}&range=5d&interval=15m`,
+      );
       const json = await resp.json();
       const c = json.candles || [];
       setCandles(c);
@@ -126,10 +135,12 @@ export default function App() {
       const geminiResp = await fetch('/api/gemini-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol })
+        body: JSON.stringify({ symbol }),
       });
       const geminiJson = await geminiResp.json();
-      setRecommendation(geminiJson.analysis || 'Ingen analys tillgänglig just nu.');
+      setRecommendation(
+        geminiJson.analysis || 'Ingen analys tillgänglig just nu.',
+      );
     } catch (error) {
       console.error('Fel vid laddning av symbol:', error);
       setRecommendation('Kunde inte hämta data.');
@@ -148,12 +159,18 @@ export default function App() {
       const resp = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: content })
+        body: JSON.stringify({ message: content }),
       });
       const data = await resp.json();
-      setChatHistory((hist) => [...hist, { role: 'ai', content: data.reply || data.message || '' }]);
+      setChatHistory((hist) => [
+        ...hist,
+        { role: 'ai', content: data.reply || data.message || '' },
+      ]);
     } catch (err) {
-      setChatHistory((hist) => [...hist, { role: 'ai', content: 'Jag kan tyvärr inte svara just nu.' }]);
+      setChatHistory((hist) => [
+        ...hist,
+        { role: 'ai', content: 'Jag kan tyvärr inte svara just nu.' },
+      ]);
     }
   };
 
@@ -163,9 +180,11 @@ export default function App() {
       const data = await resp.json();
       setTopStocks(data.top || []);
     } catch (err) {
-  
-      
-        // Market update: fetch suggestions and analyze with Gemini
+      // ignorera fel
+    }
+  };
+
+  // Uppdatera marknaden: hämta trender och analysera med Gemini
   const handleUpdate = async () => {
     setUpdatingMarket(true);
     try {
@@ -178,7 +197,7 @@ export default function App() {
           const recResp = await fetch('/api/gemini-analysis', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ symbol: item.symbol })
+            body: JSON.stringify({ symbol: item.symbol }),
           });
           const recData = await recResp.json();
           const analysis = recData.analysis || recData.message || '';
@@ -187,7 +206,7 @@ export default function App() {
           }
           if (suggestions.length >= 5) break;
         } catch (err) {
-          // ignore errors for individual stocks
+          // ignorera fel för enskilda aktier
         }
       }
       setMarketSuggestions(suggestions);
@@ -198,23 +217,23 @@ export default function App() {
     }
   };
 
-  // Buy a stock and generate sell analysis
+  // Köpfunktion som även genererar säljsignal från AI
   const buyStock = async (symbol) => {
     setCurrentTrades((trades) => [...trades, { symbol }]);
     try {
       const res = await fetch('/api/gemini-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol })
+        body: JSON.stringify({ symbol }),
       });
       const data = await res.json();
       const analysis = data.analysis || data.message || '';
       setSellMessages((prev) => ({ ...prev, [symbol]: analysis }));
     } catch (err) {
-      setSellMessages((prev) => ({ ...prev, [symbol]: 'Ingen säljanalys tillgänglig.' }));
-    }
-  };
-
+      setSellMessages((prev) => ({
+        ...prev,
+        [symbol]: 'Ingen säljanalys tillgänglig.',
+      }));
     }
   };
 
@@ -228,7 +247,7 @@ export default function App() {
         tension: 0.1,
         pointRadius: 0,
         borderWidth: 2,
-        yAxisID: 'y'
+        yAxisID: 'y',
       },
       {
         label: 'Köp',
@@ -237,7 +256,7 @@ export default function App() {
         backgroundColor: '#2e7d32',
         borderColor: '#2e7d32',
         pointRadius: 5,
-        yAxisID: 'y'
+        yAxisID: 'y',
       },
       {
         label: 'Sälj',
@@ -246,9 +265,9 @@ export default function App() {
         backgroundColor: '#c62828',
         borderColor: '#c62828',
         pointRadius: 5,
-        yAxisID: 'y'
-      }
-    ]
+        yAxisID: 'y',
+      },
+    ],
   };
 
   const chartOptions = {
@@ -259,12 +278,12 @@ export default function App() {
       x: {
         type: 'time',
         time: { unit: 'day', tooltipFormat: 'yyyy-MM-dd HH:mm' },
-        ticks: { source: 'data' }
+        ticks: { source: 'data' },
       },
       y: {
         beginAtZero: false,
-        title: { display: true, text: 'Pris (USD)' }
-      }
+        title: { display: true, text: 'Pris (USD)' },
+      },
     },
     plugins: {
       legend: { display: false },
@@ -278,14 +297,18 @@ export default function App() {
               return `${action}: ${value}`;
             }
             return `Pris: ${ctx.parsed.y.toFixed(2)}`;
-          }
-        }
+          },
+        },
       },
       zoom: {
-        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
-        pan: { enabled: true, mode: 'x' }
-      }
-    }
+        zoom: {
+          wheel: { enabled: true },
+          pinch: { enabled: true },
+          mode: 'x',
+        },
+        pan: { enabled: true, mode: 'x' },
+      },
+    },
   };
 
   const renderPanel = () => {
@@ -295,32 +318,42 @@ export default function App() {
           <h2>Chat med AI</h2>
           <div className="chat-history">
             {chatHistory.map((msg, idx) => (
-              <div key={idx} className={`chat-message ${msg.role === 'ai' ? 'ai' : ''}`}>{msg.content}</div>
+              <div key={idx} className={msg.role}>
+                {msg.content}
+              </div>
             ))}
           </div>
-          <div className="chat-input-container">
-            <input
-              className="chat-input"
-              type="text"
-              placeholder="Skriv meddelande..."
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  sendChat();
-                }
-              }}
-            />
-            <button className="chat-send-button" onClick={sendChat}>Skicka</button>
-          </div>
+          <input
+            className="chat-input"
+            type="text"
+            placeholder="Skriv meddelande..."
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                sendChat();
+              }
+            }}
+          />
+          <button className="chat-send-button" onClick={sendChat}>
+            Skicka
+          </button>
         </div>
       );
     } else if (activePanel === 'past') {
       return (
         <div className="panel">
           <h2>Tidigare trades</h2>
-          {pastTrades.length === 0 ? <p>Inga genomförda trades ännu.</p> : (
-            <ul>{pastTrades.map((trade, idx) => <li key={idx}>{`${trade.date}: ${trade.type} ${trade.symbol} @ ${trade.price.toFixed(2)}`}</li>)}</ul>
+          {pastTrades.length === 0 ? (
+            <p>Inga genomförda trades ännu.</p>
+          ) : (
+            <ul>
+              {pastTrades.map((trade, idx) => (
+                <li key={idx}>
+                  {`${trade.date}: ${trade.type} ${trade.symbol} @ ${trade.price.toFixed(2)}`}
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       );
@@ -328,8 +361,31 @@ export default function App() {
       return (
         <div className="panel">
           <h2>Aktuella trades</h2>
-          {currentTrades.length === 0 ? <p>Inga öppna trades.</p> : (
-            <ul>{currentTrades.map((trade, idx) => <li key={idx}>{`${trade.symbol}: ${trade.type} @ ${trade.price.toFixed(2)}`}</li>)}</ul>
+          {currentTrades.length === 0 ? (
+            <p>Inga öppna trades.</p>
+          ) : (
+            <ul>
+              {currentTrades.map((trade, idx) => {
+                // Stöd både formatet { symbol } och bara strängen symbol
+                const symbol = trade.symbol || trade;
+                return (
+                  <li key={idx}>
+                    <strong>{symbol}</strong>
+                    {sellMessages[symbol] && (
+                      <p
+                        style={{
+                          marginLeft: '10px',
+                          fontSize: '0.8rem',
+                          color: 'gray',
+                        }}
+                      >
+                        {sellMessages[symbol]}
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </div>
       );
@@ -337,8 +393,16 @@ export default function App() {
       return (
         <div className="panel">
           <h2>Dagens topval</h2>
-          {topStocks.length === 0 ? <p>Laddar...</p> : (
-            <ol>{topStocks.map((item, idx) => <li key={idx}>{`${item.symbol} (${item.pctChange.toFixed(2)}%)`}</li>)}</ol>
+          {topStocks.length === 0 ? (
+            <p>Laddar...</p>
+          ) : (
+            <ol>
+              {topStocks.map((item, idx) => (
+                <li key={idx}>{`${item.symbol} (${item.pctChange.toFixed(
+                  2,
+                )}%)`}</li>
+              ))}
+            </ol>
           )}
         </div>
       );
@@ -349,7 +413,9 @@ export default function App() {
   return (
     <div style={{ position: 'relative' }}>
       <h1>AI Aktie Hjälp</h1>
-      <p style={{ textAlign: 'center', marginBottom: '1rem' }}>Sök efter en aktie och få realtidsdata med AI‑drivna rekommendationer.</p>
+      <p style={{ textAlign: 'center', marginBottom: '1rem' }}>
+        Sök efter en aktie och få realtidsdata med AI‑drivna rekommendationer.
+      </p>
       <div className="search-container">
         <input
           className="search-input"
@@ -359,71 +425,103 @@ export default function App() {
           onChange={(e) => setSearch(e.target.value)}
         />
         {suggestions.length > 0 && (
-          <div className="suggestions-list">
+          <ul className="suggestions">
             {suggestions.map((item, idx) => (
-              <div
+              <li
                 key={idx}
-                className="suggestion-item"
-                onClick={() => loadSymbol(item.symbol, item.name)}
+                onClick={() => {
+                  loadSymbol(item.symbol, item.name);
+                }}
               >
                 {item.symbol} – {item.name}
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </div>
-      <button className="menu-button" onClick={() => setMenuOpen(!menuOpen)}>Meny</button>
+      <button className="menu-button" onClick={() => setMenuOpen(!menuOpen)}>
+        Meny
+      </button>
       {menuOpen && (
-        <div className="dropdown">
-          <div className="dropdown-item" onClick={() => { setActivePanel('chat'); setMenuOpen(false); }}>Chat med AI</div>
-          <div className="dropdown-item" onClick={() => { setActivePanel('past'); setMenuOpen(false); }}>Tidigare trades</div>
-          <div className="dropdown-item" onClick={() => { setActivePanel('current'); setMenuOpen(false); }}>Aktuella trades</div>
-          <div className="dropdown-item" onClick={() => { setActivePanel('top'); setMenuOpen(false); fetchTopStocks(); }}>Dagens topval</div>
+        <div className="menu-dropdown">
+          <button
+            onClick={() => {
+              setActivePanel('chat');
+              setMenuOpen(false);
+            }}
+          >
+            Chat med AI
+          </button>
+          <button
+            onClick={() => {
+              setActivePanel('past');
+              setMenuOpen(false);
+            }}
+          >
+            Tidigare trades
+          </button>
+          <button
+            onClick={() => {
+              setActivePanel('current');
+              setMenuOpen(false);
+            }}
+          >
+            Aktuella trades
+          </button>
+          <button
+            onClick={() => {
+              setActivePanel('top');
+              setMenuOpen(false);
+              fetchTopStocks();
+            }}
+          >
+            Dagens topval
+          </button>
         </div>
       )}
-      <div style={{ height: '400px', marginTop: '1rem', background: '#fff', border: '1px solid #ddd', borderRadius: '4px', padding: '1rem' }}>
-        {loading ? (
-          <div className="loading">Laddar data...</div>
-        ) : candles.length > 0 ? (
-          <>
+      {loading ? (
+        <p>Laddar data...</p>
+      ) : candles.length > 0 ? (
+        <>
+          <div className="chart-container" style={{ height: '300px' }}>
             <Line data={chartData} options={chartOptions} />
-            {analyzing && <p style={{ marginTop: '0.5rem', fontStyle: 'italic', color: '#555' }}>AI analyserar data...</p>}
-            {recommendation && <p style={{ marginTop: '1rem', fontStyle: 'italic' }}>{recommendation}</p>}
-          </>
-        ) : (
-          <p>Välj en aktie för att se grafen.</p>
-        )}
-  
-            <div style={{ marginTop: '1rem', padding: '1rem', background: '#fff', border: '1px solid #ddd', borderRadius: '4px' }}>
-        <h3>Marknadsanalys</h3>
-        <button onClick={handleUpdate} disabled={updatingMarket}>
+          </div>
+          {analyzing && <p>AI analyserar data...</p>}
+          {recommendation && <p>{recommendation}</p>}
+        </>
+      ) : (
+        <p>Välj en aktie för att se grafen.</p>
+      )}
+      <div className="market-analysis">
+        <h2>Marknadsanalys</h2>
+        <button onClick={handleUpdate}>
           {updatingMarket ? 'Analyserar...' : 'Uppdatera'}
         </button>
         {marketSuggestions.length > 0 ? (
-          <ul style={{ marginTop: '1rem' }}>
+          <ul>
             {marketSuggestions.map((item, idx) => (
-              <li key={idx} style={{ marginBottom: '0.5rem' }}>
-                <strong>{item.symbol}</strong>: {item.analysis}{' '}
+              <li key={idx}>
+                {item.symbol} : {item.analysis}{' '}
                 <button onClick={() => buyStock(item.symbol)}>Köp</button>
                 {sellMessages[item.symbol] && (
-                  <div style={{ marginTop: '0.25rem', fontStyle: 'italic', color: '#555' }}>
+                  <p style={{ fontSize: '0.8rem', color: 'gray' }}>
                     {sellMessages[item.symbol]}
-                  </div>
+                  </p>
                 )}
               </li>
             ))}
           </ul>
         ) : (
-          <p style={{ marginTop: '0.5rem' }}>Inga rekommendationer ännu.</p>
+          <p>Inga rekommendationer ännu.</p>
         )}
-      </div></div>
+      </div>
       {news.length > 0 && (
-        <div style={{ marginTop: '2rem' }}>
-          <h3>Senaste nyheter:</h3>
+        <div className="news-section">
+          <h2>Senaste nyheter:</h2>
           <ul>
             {news.map((n, idx) => (
               <li key={idx}>
-                <a href={n.link} target="_blank" rel="noopener noreferrer">{n.title}</a>
+                <strong>{n.title}</strong>
                 <p>{n.snippet}</p>
               </li>
             ))}
