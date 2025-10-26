@@ -16,7 +16,17 @@ cp .env.example .env
 Generate trading signals for a symbol:
 
 ```bash
-curl -X POST http://localhost:3000/api/signals \
+# Production (replace with your Vercel URL)
+curl -X POST https://your-app.vercel.app/api/signals \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "AAPL",
+    "interval": "15min",
+    "rangeDays": 5
+  }'
+
+# Local development (Vite dev server)
+curl -X POST http://localhost:5173/api/signals \
   -H "Content-Type: application/json" \
   -d '{
     "symbol": "AAPL",
@@ -55,7 +65,8 @@ Response:
 Backtest a strategy on historical data:
 
 ```bash
-curl -X POST http://localhost:3000/api/backtest \
+# Production
+curl -X POST https://your-app.vercel.app/api/backtest \
   -H "Content-Type: application/json" \
   -d '{
     "symbol": "AAPL",
@@ -69,6 +80,15 @@ curl -X POST http://localhost:3000/api/backtest \
       "rsiOversold": 30,
       "rsiOverbought": 70
     }
+  }'
+
+# Local development
+curl -X POST http://localhost:5173/api/backtest \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "AAPL",
+    "from": "2024-01-01",
+    "to": "2024-10-26"
   }'
 ```
 
@@ -108,7 +128,8 @@ Response:
 ### Save a trade entry
 
 ```bash
-curl -X POST http://localhost:3000/api/journal \
+# Production
+curl -X POST https://your-app.vercel.app/api/journal \
   -H "Content-Type: application/json" \
   -d '{
     "symbol": "AAPL",
@@ -117,6 +138,16 @@ curl -X POST http://localhost:3000/api/journal \
     "exit_price": 155.00,
     "profit": 500,
     "notes": "RSI signal worked well"
+  }'
+
+# Local development
+curl -X POST http://localhost:5173/api/journal \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "AAPL",
+    "type": "BUY",
+    "entry_price": 150.00,
+    "notes": "Testing RSI signal"
   }'
 ```
 
@@ -141,14 +172,17 @@ Response:
 ### Get journal entries
 
 ```bash
-# Get all entries
-curl http://localhost:3000/api/journal
+# Get all entries (local dev)
+curl http://localhost:5173/api/journal
 
 # Get entries for specific symbol
-curl "http://localhost:3000/api/journal?symbol=AAPL"
+curl "http://localhost:5173/api/journal?symbol=AAPL"
 
 # Get entries with pagination
-curl "http://localhost:3000/api/journal?limit=50&offset=0"
+curl "http://localhost:5173/api/journal?limit=50&offset=0"
+
+# Production
+curl "https://your-app.vercel.app/api/journal?symbol=AAPL"
 ```
 
 Response:
@@ -165,7 +199,8 @@ Response:
 ### Send email notification
 
 ```bash
-curl -X POST http://localhost:3000/api/notify \
+# Local development
+curl -X POST http://localhost:5173/api/notify \
   -H "Content-Type: application/json" \
   -d '{
     "type": "email",
@@ -200,7 +235,8 @@ Response:
 ### Send web push notification
 
 ```bash
-curl -X POST http://localhost:3000/api/notify \
+# Local development
+curl -X POST http://localhost:5173/api/notify \
   -H "Content-Type: application/json" \
   -d '{
     "type": "webpush",
@@ -224,7 +260,8 @@ curl -X POST http://localhost:3000/api/notify \
 ### Send both email and web push
 
 ```bash
-curl -X POST http://localhost:3000/api/notify \
+# Local development
+curl -X POST http://localhost:5173/api/notify \
   -H "Content-Type: application/json" \
   -d '{
     "type": "all",
@@ -243,7 +280,15 @@ curl -X POST http://localhost:3000/api/notify \
 Get AI-powered market analysis:
 
 ```bash
-curl -X POST http://localhost:3000/api/gemini-analysis \
+# Local development
+curl -X POST http://localhost:5173/api/gemini-analysis \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "AAPL"
+  }'
+
+# Production
+curl -X POST https://your-app.vercel.app/api/gemini-analysis \
   -H "Content-Type: application/json" \
   -d '{
     "symbol": "AAPL"
@@ -292,7 +337,9 @@ Be aware of API provider rate limits:
 npm run dev
 ```
 
-2. Test endpoints:
+The Vite dev server will start on `http://localhost:5173` by default.
+
+2. Test endpoints using the local dev URL:
 ```bash
 # Test signals
 curl -X POST http://localhost:5173/api/signals \
@@ -305,9 +352,11 @@ curl -X POST http://localhost:5173/api/backtest \
   -d '{"symbol": "AAPL", "from": "2024-01-01", "to": "2024-10-26"}'
 ```
 
+**Note**: Vite's dev server runs on port 5173 and proxies API requests to the serverless functions.
+
 ## Production Usage
 
-Replace `http://localhost:3000` with your Vercel deployment URL:
+Replace the local URL with your Vercel deployment URL:
 
 ```bash
 curl -X POST https://your-app.vercel.app/api/signals \
