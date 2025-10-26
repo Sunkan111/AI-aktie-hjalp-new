@@ -120,16 +120,14 @@ Uppgift: Ge en kort analys av aktien ${symbol} och avsluta med rekommendation (K
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              // Anpassa body efter din Gemini-version/endpoint
-              prompt,
-              maxOutputTokens: 512
+              contents: [{ parts: [{ text: prompt }] }]
             }),
             // Timeout och retries kan implementeras här vid behov
           },
         );
         const geminiJson = await geminiResp.json();
-        // Parsning: olika Gemini-versioner returnerar olika format; försök hitta textfält
-        const analysis = geminiJson?.candidates?.[0]?.content || geminiJson?.output?.[0]?.content || geminiJson?.text || null;
+        // Parsning: Gemini API returnerar text i candidates[0].content.parts[0].text
+        const analysis = geminiJson?.candidates?.[0]?.content?.parts?.[0]?.text || null;
         return res.status(200).json({ analysis: analysis || 'Ingen analys tillgänglig', raw: combined });
       } catch (err) {
         console.error('Gemini-fel:', err);
